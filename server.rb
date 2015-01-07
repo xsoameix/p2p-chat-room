@@ -13,12 +13,15 @@ class Server
   end
 
   def initialize(host, port, cb, args)
+    # constructor
     @cb = cb
     @args = args
     @host = host
+    # 16-bit id
     @port = port.to_i
     @id_bit_len = 16
-    @max_nodes = 1 << @id_bit_len # or 2 ** (@id_bit_len-1)
+    @max_nodes = 1 << @id_bit_len # or 2 ** (@id_bit_len)
+
     set_new_id
     @this_node = Node.new(@id, @host, @port)
     @finger = []
@@ -30,10 +33,12 @@ class Server
   def set_new_id
     hex = Digest::SHA1.hexdigest "#{@host}#{@port}"
     @id = hex[0...(@id_bit_len / 4)].to_i 16
+    # Using consistent hasing SHA-1
   end
 
   def is_in_open_interval(x, lower, upper)
-    if lower == upper
+    # checking if x is in (lower, upper)
+    if lower == upper && x != lower
       return true
     end
     if lower < upper
@@ -49,12 +54,14 @@ class Server
   end
 
   def ask_for_successor(tcps, id)
+    # request: find successor
     tcps.puts "find_succ #{id}"
     msg = tcps.gets.chomp.split
     return Node.new(msg[0].to_i, msg[1], msg[2].to_i) 
   end
 
   def ask_for_predecessor(tcps)
+    # request: find predecessor
     tcps.puts "find_pred"
     msg = tcps.gets.chomp.split
     if msg[0] == "nil"
@@ -65,6 +72,7 @@ class Server
   end
 
   def find_successor(id)
+    # find the successor by ID
     # if id is in (n, successor]
     if (id == @successor.id ||
         is_in_open_interval(id, @this_node.id, @successor.id))
@@ -79,6 +87,7 @@ class Server
   end
 
   def closest_preceding_node(id)
+    # find the closest preceding node by given ID
     i = @id_bit_len-1
     until i == 0 do
       # if finger[i] is in (n, id)
@@ -91,18 +100,21 @@ class Server
   end
 
   def create_ring
+    # initialize the ring
     @predecessor = nil
     @successor = @this_node
     (0..@id_bit_len-1).each { |i| @finger[i] = @this_node }
   end
 
   def join(ip, port)
+    # join a new chat by given (ip, port)
     tcps = TCPSocket.open(ip, port.to_i)
     @successor = ask_for_successor(tcps, @this_node.id)
     tcps.close
   end
 
   def stabilize
+    # fix the successor
     tcps = TCPSocket.open(@successor.ip, @successor.port)
     node = ask_for_predecessor(tcps)
     tcps.close
@@ -111,25 +123,29 @@ class Server
         @successor = node
       end
     end
+    # notify successor
     tcps = TCPSocket.open(@successor.ip, @successor.port)
     tcps.puts "notify #{@this_node.id} #{@this_node.ip} #{@this_node.port}"
     tcps.close
   end
 
   def notified(node)
+    # if this node is notified then update the predecessor
     if @predecessor.nil? || is_in_open_interval(node.id, @predecessor.id, @this_node.id)
       @predecessor = node
     end
   end
 
   def fix_fingers
-    (0..@id_bit_len-1).each do |i|
+    # update the finger table periodically
+    (0..@id_bit_len - 1).each do |i|
       id = (@this_node.id + 2**i) % @max_nodes
       @finger[i] = find_successor(id)
     end
   end
 
   def leave
+    # notify the successor and predecessor before leaving
     tcps = TCPSocket.open(@predecessor.ip, @predecessor.port)
     tcps.puts "succ_leave #{@successor.id} #{@successor.ip} #{@successor.port}"
     tcps.close
@@ -147,6 +163,7 @@ class Server
 =end
 
   def start
+    # do stabilize and fix_fingers periodically
     Thread.new do
       loop do
         stabilize
@@ -157,6 +174,7 @@ class Server
   end
 
   def run_server
+    # run the server and wait for connections
     @tcp_server = TCPServer.open(@host, @port)
     Thread.new do
       loop do
@@ -195,6 +213,7 @@ class Server
   end
 
   def send_msg_to_succ(msg, sender_id)
+    # send message to successor
     tcps = TCPSocket.open(@successor.ip, @successor.port)
     tcps.puts "msg #{sender_id}"
     tcps.puts msg
@@ -202,6 +221,7 @@ class Server
   end
 
   def send_msg(msg)
+    # send message(source) to successor
     send_msg_to_succ(msg, @this_node.id) 
   end
 end
