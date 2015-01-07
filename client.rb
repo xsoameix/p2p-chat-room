@@ -1,29 +1,39 @@
-require "socket"
-require "./server"
+require 'socket'
+require 'json'
+require './server'
 
 class Client
 
+  class << self
+
+    def receive_message(sender_id, data, cli)
+      json = JSON.parse data
+      puts "#{json['name']}> #{json['msg']}"
+    end
+  end
+
   def initialize(host, port)
     # constructor
-    @server = Server.new host, port.to_i
+    callback = Client.method(:receive_message)
+    @server = Server.new host, port.to_i, callback, self
     @alive = true
   end
 
   def start
     # ask user to join a chat
-    puts "Join a chat(y/n)?"
+    print "Join a chat(y/n)? "
     cmd = $stdin.gets.chomp
     if cmd == 'y'
-      puts "IP:"
+      print "IP: "
       ip = $stdin.gets.chomp
-      puts "port:"
+      print "port: "
       port = $stdin.gets.chomp
       @server.join ip, port
     end
     @server.start
 
     # start the chat
-    puts "Enter the username:"
+    print "Enter the username: "
     @name = $stdin.gets.chomp
     @server.send_msg "#{@name} join the chat."
     puts "================================"
@@ -45,7 +55,7 @@ class Client
       	@server.leave
       	@alive = false
       else
-        @server.send_msg "#{@name}> #{msg}"
+        @server.send_msg JSON[name: @name, msg: msg]
       end
     end
   end
