@@ -1,14 +1,24 @@
-require "socket"
+require 'digest/sha1'
+require 'socket'
 
-Node = Struct.new(:id, :ip, :port)
+class Node < Struct.new(:id, :ip, :port)
+end
 
 class Server
 
-  def initialize(host, port)
+  attr_reader :successor, :predecessor, :finger, :max_nodes
+
+  def id
+    return @this_node.id
+  end
+
+  def initialize(host, port, cb, args)
+    @cb = cb
+    @args = args
     @host = host
     @port = port.to_i
-    @id_bit_length = 16
-    @max_nodes = 1<<@id_bit_length # or 2**(@id_bit_length-1)
+    @id_bit_len = 16
+    @max_nodes = 1 << @id_bit_len # or 2 ** (@id_bit_len-1)
     set_new_id
     @this_node = Node.new(@id, @host, @port)
     @finger = []
@@ -18,11 +28,10 @@ class Server
   end
 
   def set_new_id
-    # a simple hashing instead of SHA-1
-    m = 1 << @id_bit_length
-    @id = (@host+@port.to_s).hash % m
+    hex = Digest::SHA1.hexdigest "#{@host}#{@port}"
+    @id = hex[0...(@id_bit_len / 4)].to_i 16
   end
-  
+
   def is_in_open_interval(x, lower, upper)
     if lower == upper
       return true
@@ -56,7 +65,9 @@ class Server
   end
 
   def find_successor(id)
-    if is_in_open_interval(id, @this_node.id, @successor.id) || id == @successor.id  # if id is in (n, successor]
+    # if id is in (n, successor]
+    if (id == @successor.id ||
+        is_in_open_interval(id, @this_node.id, @successor.id))
       return @successor
     else
       next_node = closest_preceding_node(id)
@@ -68,9 +79,10 @@ class Server
   end
 
   def closest_preceding_node(id)
-    i = @id_bit_length-1
+    i = @id_bit_len-1
     until i == 0 do
-      if is_in_open_interval(@finger[i].id, @this_node.id, id) # if finger[i] is in (n, id)
+      # if finger[i] is in (n, id)
+      if is_in_open_interval(@finger[i].id, @this_node.id, id)
         return @finger[i]
       end
       i = i-1
@@ -78,10 +90,10 @@ class Server
     return @this_node
   end
 
-  def create_ring()
+  def create_ring
     @predecessor = nil
     @successor = @this_node
-    (0..@id_bit_length-1).each { |i| @finger[i] = @this_node }
+    (0..@id_bit_len-1).each { |i| @finger[i] = @this_node }
   end
 
   def join(ip, port)
@@ -90,7 +102,7 @@ class Server
     tcps.close
   end
 
-  def stabilize()
+  def stabilize
     tcps = TCPSocket.open(@successor.ip, @successor.port)
     node = ask_for_predecessor(tcps)
     tcps.close
@@ -110,14 +122,14 @@ class Server
     end
   end
 
-  def fix_fingers()
-    (0..@id_bit_length-1).each do |i|
+  def fix_fingers
+    (0..@id_bit_len-1).each do |i|
       id = (@this_node.id + 2**i) % @max_nodes
       @finger[i] = find_successor(id)
     end
   end
 
-  def leave()
+  def leave
     tcps = TCPSocket.open(@predecessor.ip, @predecessor.port)
     tcps.puts "succ_leave #{@successor.id} #{@successor.ip} #{@successor.port}"
     tcps.close
@@ -144,7 +156,7 @@ class Server
     end
   end
 
-  def run_server()
+  def run_server
     @tcp_server = TCPServer.open(@host, @port)
     Thread.new do
       loop do
@@ -172,7 +184,7 @@ class Server
             sender_id = instruction[1].to_i
             msg = client.gets.chomp
             if sender_id != @this_node.id
-              puts msg # output the message
+              @cb.call sender_id, msg, @args # output the message
               send_msg_to_succ msg, sender_id
             end
           end
@@ -192,21 +204,4 @@ class Server
   def send_msg(msg)
     send_msg_to_succ(msg, @this_node.id) 
   end
-
-  def get_my_id()
-    return @this_node.id
-  end
-
-  def get_successor()
-    return @successor
-  end
-
-  def get_predecessor()
-    return @predecessor
-  end
-
-  def get_fingers()
-    return @finger
-  end
-
 end

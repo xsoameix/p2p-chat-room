@@ -8,7 +8,7 @@ class Client
     @alive = true
   end
 
-  def start()
+  def start
     puts "Join a chat(y/n)?"
     cmd = $stdin.gets.chomp
     if cmd == 'y'
@@ -30,7 +30,7 @@ class Client
     listen
   end
 
-  def listen()
+  def listen
     while @alive do
       msg = $stdin.gets.chomp
       cmd = msg.split
@@ -46,7 +46,7 @@ class Client
     end
   end
 
-  def list_table()
+  def list_table
   	id = @server.get_my_id
     succ = @server.get_successor
     pred = @server.get_predecessor
